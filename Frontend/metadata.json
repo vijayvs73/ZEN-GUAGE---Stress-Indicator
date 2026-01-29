@@ -1,0 +1,8 @@
+
+{
+  "name": "ZenGauge: Stress-to-Action",
+  "description": "A cognitive stress assessment app that uses interactive micro-games to estimate your current stress level and provides AI-powered recovery suggestions.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

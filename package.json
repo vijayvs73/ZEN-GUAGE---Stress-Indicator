@@ -1,0 +1,12 @@
+{
+  "name": "zengauge",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "npm run dev:frontend",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "npm run build --prefix frontend",
+    "start:backend": "npm run start --prefix backend"
+  }
+}

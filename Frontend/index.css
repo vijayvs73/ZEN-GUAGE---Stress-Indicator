@@ -1,0 +1,15 @@
+/* App styles – Tailwind is loaded via CDN in index.html */
+:root {
+  --bg: #f8fafc;
+  --text: #1e293b;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  min-height: 100vh;
+}
