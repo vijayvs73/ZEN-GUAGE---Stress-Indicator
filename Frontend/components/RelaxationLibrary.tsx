@@ -11,8 +11,18 @@ const VIDEO_CATEGORIES = [
   { id: 'box breathing animation', label: 'Visual Breathing' }
 ];
 
+const CATEGORY_THUMBNAILS: Record<string, string> = {
+  'guided meditation': 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=900&q=80',
+  'nature sounds 4k': 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=80',
+  'asmr for sleep': 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=900&q=80',
+  'lofi hip hop focus': 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80',
+  'box breathing animation': 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=900&q=80'
+};
+
+type VideoItem = { title: string; uri: string; thumbnail: string };
+
 const RelaxationLibrary: React.FC = () => {
-  const [videos, setVideos] = useState<{ title: string, uri: string }[]>([]);
+  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState(VIDEO_CATEGORIES[0]);
 
@@ -51,10 +61,25 @@ const RelaxationLibrary: React.FC = () => {
       const seen = new Set(aiResults.map(v => v.uri));
       const filteredCurated = curated.filter(c => !seen.has(c.uri));
 
-      setVideos([...aiResults, ...filteredCurated]);
+      const combined = [...aiResults, ...filteredCurated];
+      const enriched = await Promise.all(
+        combined.map(async (vid) => {
+          const thumbnail = await getThumbnailUrl(vid.uri);
+          return { ...vid, thumbnail };
+        })
+      );
+
+      setVideos(enriched);
     } catch (e) {
       // Fallback entirely to curated if AI fails
-      setVideos(CURATED_VIDEOS[category.id] || []);
+      const curated = CURATED_VIDEOS[category.id] || [];
+      const enriched = await Promise.all(
+        curated.map(async (vid) => {
+          const thumbnail = await getThumbnailUrl(vid.uri);
+          return { ...vid, thumbnail };
+        })
+      );
+      setVideos(enriched);
     } finally {
       setLoading(false);
     }
@@ -63,6 +88,36 @@ const RelaxationLibrary: React.FC = () => {
   useEffect(() => {
     fetchVideos(activeCategory);
   }, [activeCategory]);
+
+  const getYoutubeId = (url: string) => {
+    const match = url.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{6,})/i);
+    return match ? match[1] : null;
+  };
+
+  const getYoutubeThumbnail = (url: string) => {
+    const id = getYoutubeId(url);
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  };
+
+  const getThumbnailUrl = async (url: string): Promise<string> => {
+    // Try YouTube first
+    const yt = getYoutubeThumbnail(url);
+    if (yt) return yt;
+
+    // Try oEmbed service
+    try {
+      const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.thumbnail_url) return data.thumbnail_url;
+      }
+    } catch (e) {
+      console.warn('oEmbed fetch failed for', url, e);
+    }
+
+    // Fallback to category thumbnail
+    return CATEGORY_THUMBNAILS[activeCategory.id] || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=900&q=80';
+  };
 
   return (
     <div className="max-w-6xl mx-auto py-8 space-y-8 animate-in fade-in duration-700">
@@ -117,12 +172,20 @@ const RelaxationLibrary: React.FC = () => {
               className="group bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden shadow-sm hover:shadow-2xl hover:shadow-indigo-100 transition-all flex flex-col h-full"
             >
               <div className="aspect-video bg-slate-100 relative overflow-hidden flex items-center justify-center">
-                <Youtube size={48} className="text-slate-200 group-hover:text-red-500 transition-colors" />
+                <img
+                  src={vid.thumbnail}
+                  alt={vid.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  loading="lazy"
+                />
                 <div className="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/10 transition-colors" />
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 scale-0 group-hover:scale-100 transition-transform duration-300">
                   <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-indigo-600 shadow-2xl">
                     <Play size={24} fill="currentColor" />
                   </div>
+                </div>
+                <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-white bg-black/40 px-2 py-1 rounded-full">
+                  <Youtube size={12} /> YouTube
                 </div>
               </div>
               <div className="p-6 space-y-2 flex-1 flex flex-col justify-between">

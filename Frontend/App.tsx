@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, AppView, GameResult, StressAnalysis, AssessmentHistoryItem, UserProfile, GameDifficulty } from './types';
-import { analyzeStress, getDailyAffirmation, getProvider } from './services/aiService';
-import { trainModelNow } from './services/mlService';
-import { trainTextClassifier } from './services/textClassifier';
+import { analyzeStress, getDailyAffirmation } from './services/aiService';
+import { initModelTraining } from './services/modelTraining';
 import { websocketService } from './services/websocketService';
 import { loadLanguage, saveLanguage, t, SupportedLanguage } from './services/i18n';
+import LoginPage from './components/LoginPage';
 import ReactionGame from './components/ReactionGame';
 import MemoryGame from './components/MemoryGame';
 import TappingGame from './components/TappingGame';
@@ -44,14 +44,24 @@ import {
   MapPin,
   Video,
   User,
-  Bell
+  Bell,
+  LogOut
 } from 'lucide-react';
 
 const STORAGE_KEY = 'zengauge_history';
 const PROFILE_KEY = 'zengauge_profile';
 const DIFFICULTY_KEY = 'zengauge_difficulty';
+const USER_KEY = 'zengauge_user';
 
 const App: React.FC = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const savedUser = localStorage.getItem(USER_KEY);
+    return !!savedUser;
+  });
+  const [currentUser, setCurrentUser] = useState<{ username: string; email: string } | null>(() => {
+    const savedUser = localStorage.getItem(USER_KEY);
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
   const [activeView, setActiveView] = useState<AppView>(AppView.DASHBOARD);
   const [appState, setAppState] = useState<AppState>(AppState.WELCOME);
   const [gameResult, setGameResult] = useState<GameResult>({});
@@ -72,6 +82,23 @@ const App: React.FC = () => {
     totalAssessments: 0,
     displayName: ''
   });
+
+  const handleLoginSuccess = (username: string, email: string) => {
+    setCurrentUser({ username, email });
+    setIsLoggedIn(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem(USER_KEY);
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setActiveView(AppView.DASHBOARD);
+  };
+
+  // Show login page if not logged in
+  if (!isLoggedIn) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const normalizeResults = (results: GameResult): GameResult => ({
     reactionTime: Number.isFinite(results.reactionTime) ? results.reactionTime : 0,
@@ -114,38 +141,10 @@ const App: React.FC = () => {
         .catch(() => setAffirmation("You are doing great! Keep moving forward."));
     }, 500); // Defer to avoid blocking initial render
 
-    // Auto-activate provider detection and background model training once per session
-    const autoInit = async () => {
-      try {
-        await getProvider();
-      } catch (e) {
-        console.warn('Provider auto-detect failed:', e);
-      }
-
-      try {
-        const lstmResult = await trainModelNow();
-        localStorage.setItem('zengauge_last_lstm_train', JSON.stringify({
-          message: lstmResult.message,
-          dataPoints: lstmResult.dataPoints,
-          at: new Date().toISOString()
-        }));
-      } catch (e) {
-        console.warn('Auto LSTM training failed:', e);
-      }
-
-      try {
-        const textResult = await trainTextClassifier();
-        localStorage.setItem('zengauge_last_text_train', JSON.stringify({
-          message: textResult.message,
-          dataPoints: textResult.dataPoints,
-          at: new Date().toISOString()
-        }));
-      } catch (e) {
-        console.warn('Auto text training failed:', e);
-      }
-    };
-
-    setTimeout(autoInit, 800);
+    // Auto-activate provider detection and background model training
+    setTimeout(() => {
+      initModelTraining();
+    }, 800);
 
     // Connect to backend WebSocket
     websocketService.connect();
@@ -587,6 +586,13 @@ const App: React.FC = () => {
               <span className="text-sm font-bold truncate max-w-[100px]">
                 {profile.displayName || 'Zen User'}
               </span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all group"
+              title="Logout"
+            >
+              <LogOut size={20} className="group-hover:scale-110 transition-transform" />
             </button>
           </div>
         </header>
