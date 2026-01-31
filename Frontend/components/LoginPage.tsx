@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Mail, Lock, LogIn, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, LogIn, UserPlus, User, Shield } from 'lucide-react';
+
+export type UserRole = 'user' | 'admin';
 
 interface LoginPageProps {
-  onLoginSuccess: (username: string, email: string) => void;
+  onLoginSuccess: (username: string, email: string, role: UserRole) => void;
 }
+
+// Admin credentials (in a real app, this would be server-side validation)
+const ADMIN_CREDENTIALS = {
+  email: 'admin@zengauge.com',
+  password: 'admin123'
+};
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isLoginMode, setIsLoginMode] = useState(true);
+  const [userRole, setUserRole] = useState<UserRole>('user');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,7 +56,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         throw new Error('Please enter a valid email address');
       }
 
-      if (!isLoginMode) {
+      // Admin login validation
+      if (userRole === 'admin') {
+        if (formData.email !== ADMIN_CREDENTIALS.email || formData.password !== ADMIN_CREDENTIALS.password) {
+          throw new Error('Invalid admin credentials');
+        }
+      }
+
+      if (!isLoginMode && userRole === 'user') {
         if (!formData.username) {
           throw new Error('Username is required for registration');
         }
@@ -66,15 +82,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       // Store user session in localStorage
       const userData = {
-        username: formData.username || 'User',
+        username: userRole === 'admin' ? 'Administrator' : (formData.username || 'User'),
         email: formData.email,
+        role: userRole,
         loginDate: new Date().toISOString(),
         isLoggedIn: true
       };
       localStorage.setItem('zengauge_user', JSON.stringify(userData));
 
       // Call success callback
-      onLoginSuccess(userData.username, userData.email);
+      onLoginSuccess(userData.username, userData.email, userRole);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -93,17 +110,63 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <div className="relative w-full max-w-md">
         <div className="bg-slate-800/50 backdrop-blur-md border border-purple-500/20 rounded-2xl shadow-2xl p-8">
           {/* Header */}
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <div className="flex items-center justify-center gap-2 mb-4">
-              <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-                <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <circle cx="12" cy="12" r="1"/>
-                  <path d="M12 1v6m8.66 2.34l-4.24 4.24m0 5.64l4.24 4.24M12 17v6m-8.66-2.34l4.24-4.24m0-5.64L3.34 3.34M1 12h6m11 0h6"/>
-                </svg>
+              <div className={`p-3 rounded-lg ${userRole === 'admin' ? 'bg-gradient-to-br from-amber-500 to-orange-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
+                {userRole === 'admin' ? (
+                  <Shield className="w-8 h-8 text-white" />
+                ) : (
+                  <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="12" cy="12" r="1"/>
+                    <path d="M12 1v6m8.66 2.34l-4.24 4.24m0 5.64l4.24 4.24M12 17v6m-8.66-2.34l4.24-4.24m0-5.64L3.34 3.34M1 12h6m11 0h6"/>
+                  </svg>
+                )}
               </div>
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Zen Gauge</h1>
-            <p className="text-purple-200">{isLoginMode ? 'Welcome Back' : 'Join the Journey'}</p>
+            <p className="text-purple-200">
+              {userRole === 'admin' 
+                ? 'Admin Dashboard Access' 
+                : (isLoginMode ? 'Welcome Back' : 'Join the Journey')
+              }
+            </p>
+          </div>
+
+          {/* Role Toggle */}
+          <div className="flex bg-slate-700/50 rounded-xl p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setUserRole('user');
+                setError('');
+                setFormData({ username: '', email: '', password: '', confirmPassword: '' });
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all ${
+                userRole === 'user'
+                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <User size={18} />
+              User
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUserRole('admin');
+                setIsLoginMode(true);
+                setError('');
+                setFormData({ username: '', email: '', password: '', confirmPassword: '' });
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all ${
+                userRole === 'admin'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Shield size={18} />
+              Admin
+            </button>
           </div>
 
           {/* Error Message */}
@@ -115,8 +178,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Username Field (Sign Up Only) */}
-            {!isLoginMode && (
+            {/* Username Field (Sign Up Only for Users) */}
+            {!isLoginMode && userRole === 'user' && (
               <div>
                 <label className="block text-sm font-medium text-purple-200 mb-2">
                   Username
@@ -135,7 +198,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-purple-200 mb-2">
-                Email Address
+                {userRole === 'admin' ? 'Admin Email' : 'Email Address'}
               </label>
               <div className="relative">
                 <Mail className="absolute left-4 top-3.5 w-5 h-5 text-purple-400" />
@@ -144,7 +207,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  placeholder="your@email.com"
+                  placeholder={userRole === 'admin' ? 'admin@zengauge.com' : 'your@email.com'}
                   className="w-full pl-12 pr-4 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
                 />
               </div>
@@ -175,8 +238,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            {/* Confirm Password (Sign Up Only) */}
-            {!isLoginMode && (
+            {/* Confirm Password (Sign Up Only for Users) */}
+            {!isLoginMode && userRole === 'user' && (
               <div>
                 <label className="block text-sm font-medium text-purple-200 mb-2">
                   Confirm Password
@@ -199,7 +262,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition flex items-center justify-center gap-2 mt-6"
+              className={`w-full py-3 px-4 ${
+                userRole === 'admin'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                  : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
+              } disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition flex items-center justify-center gap-2 mt-6`}
             >
               {loading ? (
                 <>
@@ -208,7 +275,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </>
               ) : (
                 <>
-                  {isLoginMode ? (
+                  {userRole === 'admin' ? (
+                    <>
+                      <Shield className="w-5 h-5" />
+                      Access Dashboard
+                    </>
+                  ) : isLoginMode ? (
                     <>
                       <LogIn className="w-5 h-5" />
                       Sign In
@@ -224,29 +296,43 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             </button>
           </form>
 
-          {/* Toggle Mode */}
-          <div className="mt-6 text-center">
-            <p className="text-slate-300 text-sm">
-              {isLoginMode ? "Don't have an account?" : 'Already have an account?'}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLoginMode(!isLoginMode);
-                  setError('');
-                  setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-                }}
-                className="ml-2 text-purple-400 hover:text-purple-300 font-semibold transition"
-              >
-                {isLoginMode ? 'Sign Up' : 'Sign In'}
-              </button>
-            </p>
-          </div>
+          {/* Toggle Mode (Users Only) */}
+          {userRole === 'user' && (
+            <div className="mt-6 text-center">
+              <p className="text-slate-300 text-sm">
+                {isLoginMode ? "Don't have an account?" : 'Already have an account?'}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLoginMode(!isLoginMode);
+                    setError('');
+                    setFormData({ username: '', email: '', password: '', confirmPassword: '' });
+                  }}
+                  className="ml-2 text-purple-400 hover:text-purple-300 font-semibold transition"
+                >
+                  {isLoginMode ? 'Sign Up' : 'Sign In'}
+                </button>
+              </p>
+            </div>
+          )}
 
-          {/* Demo Credentials */}
+          {/* Credentials Info */}
           <div className="mt-6 p-4 bg-slate-700/30 border border-purple-500/20 rounded-lg">
-            <p className="text-xs text-slate-300 mb-2">Demo Credentials:</p>
-            <p className="text-xs text-purple-300 font-mono">Email: demo@zengauge.com</p>
-            <p className="text-xs text-purple-300 font-mono">Password: demo123</p>
+            {userRole === 'admin' ? (
+              <>
+                <p className="text-xs text-slate-300 mb-2 flex items-center gap-1">
+                  <Shield size={12} className="text-amber-400" /> Admin Credentials:
+                </p>
+                <p className="text-xs text-amber-300 font-mono">Email: admin@zengauge.com</p>
+                <p className="text-xs text-amber-300 font-mono">Password: admin123</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-300 mb-2">Demo User Credentials:</p>
+                <p className="text-xs text-purple-300 font-mono">Email: demo@zengauge.com</p>
+                <p className="text-xs text-purple-300 font-mono">Password: demo123</p>
+              </>
+            )}
           </div>
         </div>
       </div>

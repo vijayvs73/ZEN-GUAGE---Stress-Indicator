@@ -5,7 +5,8 @@ import { analyzeStress, getDailyAffirmation } from './services/aiService';
 import { initModelTraining } from './services/modelTraining';
 import { websocketService } from './services/websocketService';
 import { loadLanguage, saveLanguage, t, SupportedLanguage } from './services/i18n';
-import LoginPage from './components/LoginPage';
+import LoginPage, { UserRole } from './components/LoginPage';
+import AdminDashboard from './components/AdminDashboard';
 import ReactionGame from './components/ReactionGame';
 import MemoryGame from './components/MemoryGame';
 import TappingGame from './components/TappingGame';
@@ -58,6 +59,16 @@ const App: React.FC = () => {
     const savedUser = localStorage.getItem(USER_KEY);
     return !!savedUser;
   });
+  const [userRole, setUserRole] = useState<UserRole>(() => {
+    const savedUser = localStorage.getItem(USER_KEY);
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        return parsed.role || 'user';
+      } catch { return 'user'; }
+    }
+    return 'user';
+  });
   const [currentUser, setCurrentUser] = useState<{ username: string; email: string } | null>(() => {
     const savedUser = localStorage.getItem(USER_KEY);
     return savedUser ? JSON.parse(savedUser) : null;
@@ -84,8 +95,9 @@ const App: React.FC = () => {
     displayName: ''
   });
 
-  const handleLoginSuccess = (username: string, email: string) => {
+  const handleLoginSuccess = (username: string, email: string, role: UserRole) => {
     setCurrentUser({ username, email });
+    setUserRole(role);
     setIsLoggedIn(true);
   };
 
@@ -93,13 +105,9 @@ const App: React.FC = () => {
     localStorage.removeItem(USER_KEY);
     setIsLoggedIn(false);
     setCurrentUser(null);
+    setUserRole('user');
     setActiveView(AppView.DASHBOARD);
   };
-
-  // Show login page if not logged in
-  if (!isLoggedIn) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
-  }
 
   const normalizeResults = (results: GameResult): GameResult => ({
     reactionTime: Number.isFinite(results.reactionTime) ? results.reactionTime : 0,
@@ -492,6 +500,16 @@ const App: React.FC = () => {
   ];
 
   const currentStepIndex = assessmentSteps.findIndex(s => s.state === appState);
+
+  // Show login page if not logged in (after all hooks are defined)
+  if (!isLoggedIn) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Show admin dashboard if logged in as admin
+  if (userRole === 'admin') {
+    return <AdminDashboard onLogout={handleLogout} />;
+  }
 
   return (
     <div className="min-h-screen flex bg-slate-50">
