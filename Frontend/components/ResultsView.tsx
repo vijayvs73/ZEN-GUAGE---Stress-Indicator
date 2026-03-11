@@ -40,8 +40,8 @@ const ResultsView: React.FC<Props> = ({ data, results, onRestart }) => {
     const seedFrom = JSON.stringify({
       r: results.reactionTime,
       a: results.accuracy,
-      m: results.memory,
-      t: results.tapping,
+      m: results.memoryScore,
+      t: results.tappingSpeed,
       s: data.stressLevel
     });
     const seed = seedFrom.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -102,14 +102,14 @@ const ResultsView: React.FC<Props> = ({ data, results, onRestart }) => {
     }
 
     // Memory insights
-    if (results.memory !== undefined && results.memory !== null) {
-      if (results.memory >= 80) {
+    if (results.memoryScore !== undefined && results.memoryScore !== null) {
+      if (results.memoryScore >= 80) {
         insights.push(...pick([
           "Memory performance is strong—pattern recall is sharp.",
           "Great memory retention suggests good working memory.",
           "Your recall is excellent—mental tracking is solid."
         ], 1));
-      } else if (results.memory < 60) {
+      } else if (results.memoryScore < 60) {
         insights.push(...pick([
           "Memory recall is lower—working memory may be taxed.",
           "Pattern retention dropped—mental fatigue possible.",
@@ -119,14 +119,14 @@ const ResultsView: React.FC<Props> = ({ data, results, onRestart }) => {
     }
 
     // Tapping insights
-    if (results.tapping) {
-      if (results.tapping >= 7) {
+    if (results.tappingSpeed) {
+      if (results.tappingSpeed >= 7) {
         insights.push(...pick([
           "Motor speed is high—strong sustained focus.",
           "Fast tapping suggests good stamina and energy.",
           "Your pace is strong—focus endurance is solid."
         ], 1));
-      } else if (results.tapping < 4.5) {
+      } else if (results.tappingSpeed < 4.5) {
         insights.push(...pick([
           "Tap rate is low—possible mental or physical fatigue.",
           "Lower tapping speed can signal reduced endurance.",

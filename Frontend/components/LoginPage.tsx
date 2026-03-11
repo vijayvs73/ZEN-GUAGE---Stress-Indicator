@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Mail, Lock, LogIn, UserPlus, User, Shield } from 'lucide-react';
+import { BarChart2, Mail, Lock, User, Eye, EyeOff, Loader2, Shield } from 'lucide-react';
+import { signIn, signUp, isAdmin, supabase } from '../services/supabaseClient';
 
 export type UserRole = 'user' | 'admin';
 
@@ -7,353 +8,278 @@ interface LoginPageProps {
   onLoginSuccess: (username: string, email: string, role: UserRole) => void;
 }
 
-// Admin credentials (in a real app, this would be server-side validation)
-const ADMIN_CREDENTIALS = {
-  email: 'admin@zengauge.com',
-  password: 'admin123'
-};
+const USER_KEY = 'zengauge_user';
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [userRole, setUserRole] = useState<UserRole>('user');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [isAdminLogin, setIsAdminLogin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  });
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    setError('');
-  };
-
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setIsLoading(true);
 
     try {
       // Validation
-      if (!formData.email || !formData.password) {
-        throw new Error('Please fill in all required fields');
+      if (!email || !password) {
+        throw new Error('Please fill in all fields');
       }
 
-      if (!validateEmail(formData.email)) {
-        throw new Error('Please enter a valid email address');
+      if (!email.includes('@')) {
+        throw new Error('Please enter a valid email');
       }
 
-      // Admin login validation
-      if (userRole === 'admin') {
-        if (formData.email !== ADMIN_CREDENTIALS.email || formData.password !== ADMIN_CREDENTIALS.password) {
-          throw new Error('Invalid admin credentials');
-        }
+      if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters');
       }
 
-      if (!isLoginMode && userRole === 'user') {
-        if (!formData.username) {
-          throw new Error('Username is required for registration');
-        }
-
-        if (formData.password.length < 6) {
-          throw new Error('Password must be at least 6 characters long');
-        }
-
-        if (formData.password !== formData.confirmPassword) {
-          throw new Error('Passwords do not match');
-        }
+      if (isSignUp && password !== confirmPassword) {
+        throw new Error('Passwords do not match');
       }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // Store user session in localStorage
-      const userData = {
-        username: userRole === 'admin' ? 'Administrator' : (formData.username || 'User'),
-        email: formData.email,
-        role: userRole,
-        loginDate: new Date().toISOString(),
-        isLoggedIn: true
-      };
-      localStorage.setItem('zengauge_user', JSON.stringify(userData));
-
-      // Call success callback
-      onLoginSuccess(userData.username, userData.email, userRole);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (isAdminLogin) {
+        // Admin login via Supabase
+        const { user } = await signIn(email, password);
+        
+        if (user) {
+          const adminCheck = await isAdmin(user.id);
+          if (!adminCheck) {
+            throw new Error('Access denied. Not an admin account.');
+          }
+          
+          const userData = { 
+            username: user.email?.split('@')[0] || 'Admin', 
+            email: user.email || email, 
+            role: 'admin' as UserRole 
+          };
+          localStorage.setItem(USER_KEY, JSON.stringify(userData));
+          onLoginSuccess(userData.username, userData.email, 'admin');
+        }
+      } else if (isSignUp) {
+        // User signup via Supabase
+        const { user } = await signUp(email, password, username);
+        
+        if (user) {
+          const userData = { 
+            username: username || email.split('@')[0], 
+            email, 
+            role: 'user' as UserRole 
+          };
+          localStorage.setItem(USER_KEY, JSON.stringify(userData));
+          onLoginSuccess(userData.username, userData.email, 'user');
+        }
+      } else {
+        // User login via Supabase
+        const { user } = await signIn(email, password);
+        
+        if (user) {
+          const userData = { 
+            username: user.email?.split('@')[0] || 'User', 
+            email: user.email || email, 
+            role: 'user' as UserRole 
+          };
+          localStorage.setItem(USER_KEY, JSON.stringify(userData));
+          onLoginSuccess(userData.username, userData.email, 'user');
+        }
+      }
+    } catch (err: any) {
+      console.error('Auth error:', err);
+      setError(err.message || 'Authentication failed. Please try again.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
-      {/* Animated background elements */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-      <div className="absolute -bottom-8 right-0 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-      <div className="absolute -bottom-8 left-1/2 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animated background decoration */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/4 right-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+        <div className="absolute bottom-1/4 left-1/3 w-48 h-48 bg-pink-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
+        {/* Grid pattern */}
+        <div className="absolute inset-0 opacity-5" style={{
+          backgroundImage: 'linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)',
+          backgroundSize: '50px 50px'
+        }} />
+      </div>
 
-      {/* Login Card */}
-      <div className="relative w-full max-w-md">
-        <div className="bg-slate-800/50 backdrop-blur-md border border-purple-500/20 rounded-2xl shadow-2xl p-8">
-          {/* Header */}
-          <div className="text-center mb-6">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <div className={`p-3 rounded-lg ${userRole === 'admin' ? 'bg-gradient-to-br from-amber-500 to-orange-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
-                {userRole === 'admin' ? (
-                  <Shield className="w-8 h-8 text-white" />
-                ) : (
-                  <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <circle cx="12" cy="12" r="1"/>
-                    <path d="M12 1v6m8.66 2.34l-4.24 4.24m0 5.64l4.24 4.24M12 17v6m-8.66-2.34l4.24-4.24m0-5.64L3.34 3.34M1 12h6m11 0h6"/>
-                  </svg>
-                )}
-              </div>
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Zen Gauge</h1>
-            <p className="text-purple-200">
-              {userRole === 'admin' 
-                ? 'Admin Dashboard Access' 
-                : (isLoginMode ? 'Welcome Back' : 'Join the Journey')
-              }
-            </p>
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo with animation */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-3xl mb-5 shadow-2xl shadow-indigo-500/40 relative group">
+            <BarChart2 className="w-10 h-10 text-white relative z-10" />
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-violet-500 rounded-3xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
           </div>
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">ZenGauge</h1>
+          <p className="text-indigo-300 text-lg">Your personal stress monitor</p>
+        </div>
 
-          {/* Role Toggle */}
-          <div className="flex bg-slate-700/50 rounded-xl p-1 mb-6">
+        {/* Role Toggle with better styling */}
+        <div className="flex justify-center mb-8">
+          <div className="inline-flex rounded-2xl bg-white/5 border border-white/10 p-1.5 backdrop-blur-sm">
             <button
-              type="button"
-              onClick={() => {
-                setUserRole('user');
-                setError('');
-                setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all ${
-                userRole === 'user'
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => { setIsAdminLogin(false); setError(''); }}
+              className={`px-8 py-3 text-sm font-bold rounded-xl transition-all duration-300 flex items-center gap-2 ${
+                !isAdminLogin
+                  ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
               }`}
             >
               <User size={18} />
               User
             </button>
             <button
-              type="button"
-              onClick={() => {
-                setUserRole('admin');
-                setIsLoginMode(true);
-                setError('');
-                setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-semibold transition-all ${
-                userRole === 'admin'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => { setIsAdminLogin(true); setIsSignUp(false); setError(''); }}
+              className={`px-8 py-3 text-sm font-bold rounded-xl transition-all duration-300 flex items-center gap-2 ${
+                isAdminLogin
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
               }`}
             >
               <Shield size={18} />
               Admin
             </button>
           </div>
+        </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+        {/* Login Card with glass effect */}
+        <div className={`bg-white/5 backdrop-blur-2xl border rounded-[2rem] p-8 shadow-2xl transition-all duration-300 ${
+          isAdminLogin ? 'border-amber-500/20' : 'border-white/10'
+        }`}>
+          <h2 className="text-2xl font-bold text-white mb-2 text-center">
+            {isAdminLogin ? 'Admin Portal' : (isSignUp ? 'Create Account' : 'Welcome Back')}
+          </h2>
+          <p className="text-indigo-300/80 text-center mb-8">
+            {isAdminLogin 
+              ? 'Access the admin dashboard' 
+              : (isSignUp ? 'Start your wellness journey' : 'Sign in to continue')}
+          </p>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Username Field (Sign Up Only for Users) */}
-            {!isLoginMode && userRole === 'user' && (
-              <div>
-                <label className="block text-sm font-medium text-purple-200 mb-2">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  placeholder="Choose your username"
-                  className="w-full px-4 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
-                />
-              </div>
-            )}
-
-            {/* Email Field */}
-            <div>
-              <label className="block text-sm font-medium text-purple-200 mb-2">
-                {userRole === 'admin' ? 'Admin Email' : 'Email Address'}
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-3.5 w-5 h-5 text-purple-400" />
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder={userRole === 'admin' ? 'admin@zengauge.com' : 'your@email.com'}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
-                />
-              </div>
-            </div>
-
-            {/* Password Field */}
-            <div>
-              <label className="block text-sm font-medium text-purple-200 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-3.5 w-5 h-5 text-purple-400" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="••••••••"
-                  className="w-full pl-12 pr-12 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-3.5 text-purple-400 hover:text-purple-300 transition"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Confirm Password (Sign Up Only for Users) */}
-            {!isLoginMode && userRole === 'user' && (
-              <div>
-                <label className="block text-sm font-medium text-purple-200 mb-2">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-3.5 w-5 h-5 text-purple-400" />
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {isSignUp && !isAdminLogin && (
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-indigo-200">Username</label>
+                <div className="relative group">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-300 transition-colors" size={18} />
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    placeholder="••••••••"
-                    className="w-full pl-12 pr-4 py-3 bg-slate-700/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white placeholder-indigo-400/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                    placeholder="Choose a username"
                   />
                 </div>
               </div>
             )}
 
-            {/* Submit Button */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-indigo-200">Email</label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-300 transition-colors" size={18} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white placeholder-indigo-400/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                  placeholder="Enter your email"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-indigo-200">Password</label>
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-300 transition-colors" size={18} />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-12 pr-12 text-white placeholder-indigo-400/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                  placeholder="Enter your password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {isSignUp && !isAdminLogin && (
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-indigo-200">Confirm Password</label>
+                <div className="relative group">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-300 transition-colors" size={18} />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-white placeholder-indigo-400/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:bg-white/10 transition-all"
+                    placeholder="Confirm your password"
+                  />
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-300 text-sm text-center backdrop-blur-sm flex items-center justify-center gap-2">
+                <span className="text-red-400">⚠</span> {error}
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
-              className={`w-full py-3 px-4 ${
-                userRole === 'admin'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
-                  : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
-              } disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition flex items-center justify-center gap-2 mt-6`}
+              disabled={isLoading}
+              className={`w-full py-4 rounded-xl font-bold text-white transition-all duration-300 flex items-center justify-center gap-3 mt-6 ${
+                isAdminLogin
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40'
+                  : 'bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40'
+              } disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]`}
             >
-              {loading ? (
+              {isLoading ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Processing...
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>{isAdminLogin ? 'Authenticating...' : (isSignUp ? 'Creating Account...' : 'Signing In...')}</span>
                 </>
               ) : (
                 <>
-                  {userRole === 'admin' ? (
-                    <>
-                      <Shield className="w-5 h-5" />
-                      Access Dashboard
-                    </>
-                  ) : isLoginMode ? (
-                    <>
-                      <LogIn className="w-5 h-5" />
-                      Sign In
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-5 h-5" />
-                      Create Account
-                    </>
-                  )}
+                  <span>{isAdminLogin ? 'Access Dashboard' : (isSignUp ? 'Create Account' : 'Sign In')}</span>
+                  <span className="text-lg">→</span>
                 </>
               )}
             </button>
           </form>
 
-          {/* Toggle Mode (Users Only) */}
-          {userRole === 'user' && (
-            <div className="mt-6 text-center">
-              <p className="text-slate-300 text-sm">
-                {isLoginMode ? "Don't have an account?" : 'Already have an account?'}
+          {!isAdminLogin && (
+            <div className="text-center mt-8 pt-6 border-t border-white/10">
+              <p className="text-indigo-300/80">
+                {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
                 <button
-                  type="button"
-                  onClick={() => {
-                    setIsLoginMode(!isLoginMode);
-                    setError('');
-                    setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-                  }}
-                  className="ml-2 text-purple-400 hover:text-purple-300 font-semibold transition"
+                  onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
+                  className="text-white font-bold hover:text-indigo-300 transition-colors"
                 >
-                  {isLoginMode ? 'Sign Up' : 'Sign In'}
+                  {isSignUp ? 'Sign In' : 'Sign Up'}
                 </button>
               </p>
             </div>
           )}
-
-          {/* Credentials Info */}
-          <div className="mt-6 p-4 bg-slate-700/30 border border-purple-500/20 rounded-lg">
-            {userRole === 'admin' ? (
-              <>
-                <p className="text-xs text-slate-300 mb-2 flex items-center gap-1">
-                  <Shield size={12} className="text-amber-400" /> Admin Credentials:
-                </p>
-                <p className="text-xs text-amber-300 font-mono">Email: admin@zengauge.com</p>
-                <p className="text-xs text-amber-300 font-mono">Password: admin123</p>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-slate-300 mb-2">Demo User Credentials:</p>
-                <p className="text-xs text-purple-300 font-mono">Email: demo@zengauge.com</p>
-                <p className="text-xs text-purple-300 font-mono">Password: demo123</p>
-              </>
-            )}
-          </div>
         </div>
-      </div>
 
-      {/* CSS for animations */}
-      <style>{`
-        @keyframes blob {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -50px) scale(1.1); }
-          66% { transform: translate(-20px, 20px) scale(0.9); }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-      `}</style>
+        <p className="text-center text-indigo-400/40 text-xs mt-8">
+          By continuing, you agree to our Terms of Service and Privacy Policy
+        </p>
+      </div>
     </div>
   );
 };

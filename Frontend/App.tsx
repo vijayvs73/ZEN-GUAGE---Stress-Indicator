@@ -1,16 +1,17 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AppState, AppView, GameResult, StressAnalysis, AssessmentHistoryItem, UserProfile, GameDifficulty } from './types';
 import { analyzeStress, getDailyAffirmation } from './services/aiService';
 import { initModelTraining } from './services/modelTraining';
 import { websocketService } from './services/websocketService';
 import { loadLanguage, saveLanguage, t, SupportedLanguage } from './services/i18n';
+import { supabase, signOut as supabaseSignOut, getCurrentUser } from './services/supabaseClient';
 import LoginPage, { UserRole } from './components/LoginPage';
 import AdminDashboard from './components/AdminDashboard';
 import ReactionGame from './components/ReactionGame';
 import MemoryGame from './components/MemoryGame';
-import TappingGame from './components/TappingGame';
-import AccuracyGame from './components/AccuracyGame';
+import WhackAStressGame from './components/RainRhythmGame';
+import BalloonBreathingGame from './components/BalloonBreathingGame';
 import ResultsView from './components/ResultsView';
 import ProgressView from './components/ProgressView';
 import ChatBox from './components/ChatBox';
@@ -76,6 +77,7 @@ const App: React.FC = () => {
   const [activeView, setActiveView] = useState<AppView>(AppView.DASHBOARD);
   const [appState, setAppState] = useState<AppState>(AppState.WELCOME);
   const [gameResult, setGameResult] = useState<GameResult>({});
+  const gameResultRef = useRef<GameResult>({}); // Ref to track results synchronously
   const [analysis, setAnalysis] = useState<StressAnalysis | null>(null);
   const [coords, setCoords] = useState<{ latitude: number, longitude: number } | undefined>();
   const [history, setHistory] = useState<AssessmentHistoryItem[]>([]);
@@ -101,7 +103,12 @@ const App: React.FC = () => {
     setIsLoggedIn(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabaseSignOut();
+    } catch (error) {
+      console.log('Supabase signout failed, continuing with local logout');
+    }
     localStorage.removeItem(USER_KEY);
     setIsLoggedIn(false);
     setCurrentUser(null);
@@ -246,6 +253,7 @@ const App: React.FC = () => {
     setAppState(AppState.GAME_REACTION);
     setActiveView(AppView.DASHBOARD);
     setGameResult({});
+    gameResultRef.current = {}; // Reset the ref too
     setAnalysis(null);
   };
 
@@ -260,30 +268,50 @@ const App: React.FC = () => {
     if (isAssessmentFlow && activeView === AppView.DASHBOARD) {
       // Assessment flow
       return (
-        <div className="max-w-xl mx-auto py-8">
-          <div className="mb-8 flex items-center justify-between px-2">
-            {assessmentSteps.map((step, idx) => (
-              <div key={idx} className="flex flex-col items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${idx === currentStepIndex ? 'bg-indigo-600 text-white ring-4 ring-indigo-50' :
-                  idx < currentStepIndex ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
+        <div className="max-w-xl mx-auto py-8 fade-in">
+          {/* Progress Steps */}
+          <div className="mb-8 px-4">
+            <div className="flex items-center justify-between relative">
+              {/* Progress line */}
+              <div className="absolute top-4 left-0 right-0 h-0.5 bg-slate-200 -z-10"></div>
+              <div 
+                className="absolute top-4 left-0 h-0.5 bg-gradient-to-r from-indigo-600 to-violet-600 -z-10 transition-all duration-500"
+                style={{ width: `${(currentStepIndex / (assessmentSteps.length - 1)) * 100}%` }}
+              ></div>
+              
+              {assessmentSteps.map((step, idx) => (
+                <div key={idx} className="flex flex-col items-center gap-2">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
+                    idx === currentStepIndex 
+                      ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white ring-4 ring-indigo-100 shadow-lg scale-110' 
+                      : idx < currentStepIndex 
+                        ? 'bg-indigo-600 text-white' 
+                        : 'bg-slate-100 text-slate-400 border-2 border-slate-200'
                   }`}>
-                  {idx + 1}
+                    {idx < currentStepIndex ? '✓' : idx + 1}
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    idx === currentStepIndex ? 'text-indigo-600' : 'text-slate-400'
+                  }`}>
+                    {step.label}
+                  </span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 sm:p-12 shadow-sm">
+          
+          <div className="bg-white/80 backdrop-blur-xl border border-slate-200/50 rounded-3xl p-8 sm:p-10 shadow-xl shadow-slate-100 scale-in">
             {appState === AppState.GAME_REACTION && <ReactionGame difficulty={difficulty} onComplete={onReactionComplete} />}
             {appState === AppState.GAME_MEMORY && <MemoryGame difficulty={difficulty} onComplete={onMemoryComplete} />}
-            {appState === AppState.GAME_TAPPING && <TappingGame difficulty={difficulty} onComplete={onTappingComplete} />}
-            {appState === AppState.GAME_ACCURACY && <AccuracyGame difficulty={difficulty} onComplete={onAccuracyComplete} />}
+            {appState === AppState.GAME_TAPPING && <WhackAStressGame difficulty={difficulty} onComplete={onTappingComplete} />}
+            {appState === AppState.GAME_ACCURACY && <BalloonBreathingGame difficulty={difficulty} onComplete={onAccuracyComplete} />}
           </div>
           {appState !== AppState.ANALYZING && (
             <button
               onClick={() => setAppState(AppState.WELCOME)}
-              className="mt-8 w-full text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors flex items-center justify-center gap-2"
+              className="mt-6 w-full text-slate-400 font-semibold text-sm hover:text-red-500 transition-colors flex items-center justify-center gap-2 py-3 rounded-xl hover:bg-red-50"
             >
-              Cancel Test
+              ✕ Cancel Assessment
             </button>
           )}
         </div>
@@ -291,69 +319,88 @@ const App: React.FC = () => {
     } else if (activeView === AppView.DASHBOARD) {
       if (appState === AppState.ANALYZING) {
         return (
-          <div className="flex flex-col items-center justify-center py-40 space-y-6">
-            <Loader2 className="animate-spin text-indigo-600" size={48} />
+          <div className="flex flex-col items-center justify-center py-40 space-y-8 fade-in">
+            <div className="relative">
+              <div className="w-20 h-20 border-4 border-indigo-100 rounded-full"></div>
+              <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-indigo-600 rounded-full animate-spin"></div>
+              <div className="absolute inset-2 w-16 h-16 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-full flex items-center justify-center">
+                <Brain size={28} className="text-indigo-600" />
+              </div>
+            </div>
             <div className="text-center">
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">{t(language, 'processing_title')}</h2>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">{t(language, 'processing_title')}</h2>
               <p className="text-slate-500">{t(language, 'processing_body')}</p>
+            </div>
+            <div className="flex gap-1">
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
         );
       }
       if (appState === AppState.RESULTS) {
         return analysis ? (
-          <div className="max-w-4xl mx-auto py-8 space-y-8">
+          <div className="max-w-4xl mx-auto py-8 space-y-8 fade-in">
             <ResultsView data={analysis} results={gameResult} onRestart={startAssessment} />
           </div>
         ) : null;
       }
       return (
-        <div className="max-w-5xl mx-auto space-y-8 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 bg-indigo-600 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl shadow-indigo-100 relative overflow-hidden group">
-              <div className="absolute -right-20 -top-20 w-64 h-64 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all duration-700" />
+        <div className="max-w-5xl mx-auto space-y-8 py-6 fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 rounded-3xl p-8 md:p-10 text-white shadow-2xl shadow-indigo-200 relative overflow-hidden group">
+              {/* Animated background elements */}
+              <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute -right-20 -top-20 w-72 h-72 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all duration-1000 float" />
+                <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-violet-500/30 rounded-full blur-2xl" />
+                <div className="absolute right-1/4 bottom-1/4 w-32 h-32 bg-pink-500/20 rounded-full blur-xl" />
+              </div>
               <div className="relative space-y-6">
-                <div className="flex items-center gap-4">
-                  <div className="px-4 py-1.5 bg-white/20 rounded-full text-xs font-bold uppercase tracking-widest backdrop-blur-md">
-                    {t(language, 'hero_badge')}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="px-4 py-2 bg-white/15 backdrop-blur-md rounded-full text-xs font-bold uppercase tracking-widest border border-white/20">
+                    ✨ {t(language, 'hero_badge')}
                   </div>
                   {profile.streak > 0 && (
-                    <div className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-400 text-amber-950 rounded-full text-xs font-bold uppercase tracking-widest">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-amber-950 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg">
                       <Flame size={14} /> {profile.streak} Day Streak
                     </div>
                   )}
                 </div>
-                <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tighter">
+                <h1 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">
                   {t(language, 'hero_title_line1')} <br /> <span className="text-indigo-200">{t(language, 'hero_title_line2')}</span>
                 </h1>
-                <p className="text-indigo-100/80 text-lg max-w-md">
+                <p className="text-indigo-100/80 text-lg max-w-md leading-relaxed">
                   {t(language, 'hero_subtitle')}
                 </p>
                 <div className="flex flex-wrap gap-4 pt-4">
                   <button
                     onClick={startAssessment}
-                    className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-black text-lg hover:bg-indigo-50 transition-all shadow-xl active:scale-95 flex items-center gap-2"
+                    className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-bold text-base hover:bg-indigo-50 transition-all shadow-xl hover:shadow-2xl btn-press flex items-center gap-3 group"
                   >
-                    {t(language, 'hero_start_test')} <Plus size={20} />
+                    <span>{t(language, 'hero_start_test')}</span>
+                    <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center group-hover:bg-indigo-200 transition-all">
+                      <Plus size={18} />
+                    </div>
                   </button>
                   <button
                     onClick={() => setActiveView(AppView.RELAX_VIDEOS)}
-                    className="bg-indigo-500/50 text-white border border-white/20 backdrop-blur-md px-8 py-4 rounded-2xl font-bold hover:bg-indigo-500 transition-all active:scale-95 flex items-center gap-2"
+                    className="bg-white/15 text-white border border-white/30 backdrop-blur-md px-8 py-4 rounded-2xl font-bold hover:bg-white/25 transition-all btn-press flex items-center gap-3"
                   >
                     {t(language, 'hero_relax_videos')} <Video size={20} />
                   </button>
                 </div>
-                <div className="pt-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-100/80 mb-2">Game Level</p>
-                  <div className="inline-flex rounded-2xl bg-white/10 border border-white/20 p-1">
+                <div className="pt-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200 mb-3">Game Difficulty</p>
+                  <div className="inline-flex rounded-xl bg-white/10 border border-white/20 p-1 backdrop-blur-sm">
                     {(['easy', 'medium', 'hard'] as GameDifficulty[]).map((level) => (
                       <button
                         key={level}
                         onClick={() => setDifficulty(level)}
-                        className={`px-4 py-2 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${
+                        className={`px-5 py-2.5 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
                           difficulty === level
-                            ? 'bg-white text-indigo-700 shadow-sm'
-                            : 'text-white/80 hover:text-white'
+                            ? 'bg-white text-indigo-700 shadow-lg'
+                            : 'text-white/80 hover:text-white hover:bg-white/10'
                         }`}
                       >
                         {level}
@@ -364,39 +411,44 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+            <div className="space-y-5">
+              <div className="bg-white/80 backdrop-blur-xl p-6 rounded-2xl border border-slate-200/50 shadow-sm space-y-5 card-hover">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 tracking-tight">{t(language, 'stats_title')}</h3>
+                  <h3 className="font-bold text-slate-900">{t(language, 'stats_title')}</h3>
+                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <BarChart2 size={16} className="text-indigo-600" />
+                  </div>
                 </div>
                 <div className="space-y-4">
-                  <div className={`flex items-center justify-between p-4 rounded-2xl ${archetype.bg}`}>
+                  <div className={`flex items-center justify-between p-4 rounded-xl ${archetype.bg} border border-slate-100`}>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Archetype</p>
-                      <p className={`font-black ${archetype.color}`}>{archetype.title}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Archetype</p>
+                      <p className={`font-black text-lg ${archetype.color}`}>{archetype.title}</p>
                     </div>
-                    <Activity size={24} className={archetype.color} />
+                    <div className={`w-12 h-12 ${archetype.bg} rounded-xl flex items-center justify-center`}>
+                      <Activity size={24} className={archetype.color} />
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-slate-50 p-4 rounded-2xl">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200/50">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                         {t(language, 'stats_best_acc')}
                       </p>
-                      <p className="text-xl font-black text-slate-900">{profile.bestAccuracy}%</p>
+                      <p className="text-2xl font-black text-slate-900">{profile.bestAccuracy}<span className="text-sm text-slate-400">%</span></p>
                     </div>
-                    <div className="bg-slate-50 p-4 rounded-2xl">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-xl border border-slate-200/50">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                         {t(language, 'stats_tests')}
                       </p>
-                      <p className="text-xl font-black text-slate-900">{profile.totalAssessments}</p>
+                      <p className="text-2xl font-black text-slate-900">{profile.totalAssessments}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Burnout Risk Model Display */}
-                <div className="mt-6 pt-6 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                <div className="pt-4 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                       <Activity size={12} /> {t(language, 'burnout_badge')}
                     </span>
                   </div>
@@ -417,11 +469,16 @@ const App: React.FC = () => {
 
               <div
                 onClick={() => setActiveView(AppView.BREATHE)}
-                className="bg-emerald-500 p-8 rounded-[2.5rem] text-white shadow-xl shadow-emerald-100 cursor-pointer hover:scale-[1.02] transition-all group"
+                className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl text-white shadow-xl shadow-emerald-100 cursor-pointer hover:scale-[1.02] hover:shadow-2xl transition-all group card-hover"
               >
-                <Wind size={32} className="mb-4 opacity-80 group-hover:rotate-12 transition-transform" />
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm group-hover:rotate-12 transition-transform">
+                    <Wind size={24} />
+                  </div>
+                  <ChevronRight size={20} className="opacity-60 group-hover:translate-x-1 transition-transform" />
+                </div>
                 <h4 className="text-xl font-bold mb-1">{t(language, 'quick_calm_title')}</h4>
-                <p className="text-emerald-100 text-sm">{t(language, 'quick_calm_body')}</p>
+                <p className="text-emerald-100 text-sm leading-relaxed">{t(language, 'quick_calm_body')}</p>
               </div>
             </div>
           </div>
@@ -431,22 +488,30 @@ const App: React.FC = () => {
   };
 
   const onReactionComplete = (time: number) => {
-    setGameResult(prev => ({ ...prev, reactionTime: time }));
+    gameResultRef.current = { ...gameResultRef.current, reactionTime: time };
+    setGameResult(gameResultRef.current);
+    console.log('Reaction complete:', time, 'ms - Results so far:', gameResultRef.current);
     setAppState(AppState.GAME_MEMORY);
   };
 
   const onMemoryComplete = (score: number) => {
-    setGameResult(prev => ({ ...prev, memoryScore: score }));
+    gameResultRef.current = { ...gameResultRef.current, memoryScore: score };
+    setGameResult(gameResultRef.current);
+    console.log('Memory complete:', score, '- Results so far:', gameResultRef.current);
     setAppState(AppState.GAME_TAPPING);
   };
 
   const onTappingComplete = (tapsPerSec: number) => {
-    setGameResult(prev => ({ ...prev, tappingSpeed: tapsPerSec }));
+    gameResultRef.current = { ...gameResultRef.current, tappingSpeed: tapsPerSec };
+    setGameResult(gameResultRef.current);
+    console.log('Tapping complete:', tapsPerSec, '- Results so far:', gameResultRef.current);
     setAppState(AppState.GAME_ACCURACY);
   };
 
   const onAccuracyComplete = async (accuracyScore: number) => {
-    const finalResults = { ...gameResult, accuracy: accuracyScore };
+    gameResultRef.current = { ...gameResultRef.current, accuracy: accuracyScore };
+    const finalResults = { ...gameResultRef.current };
+    console.log('All games complete! Final results:', finalResults);
     setGameResult(finalResults);
     setAppState(AppState.ANALYZING);
     
@@ -512,35 +577,38 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
+    <div className="min-h-screen flex bg-slate-50 mesh-gradient">
           {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:static lg:inset-auto ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="h-full flex flex-col p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-indigo-600 rounded-[1rem] flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-              <BarChart2 size={28} />
+      <aside className={`fixed inset-y-0 left-0 w-72 bg-white/80 backdrop-blur-xl border-r border-slate-200/50 z-50 transform transition-all duration-500 ease-out lg:translate-x-0 lg:static lg:inset-auto shadow-2xl shadow-slate-200/50 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-full flex flex-col p-6">
+          <div className="flex items-center gap-3 mb-8 px-2">
+            <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 shine">
+              <BarChart2 size={26} />
             </div>
-                <span className="text-2xl font-black text-slate-900 tracking-tighter">{t(language, 'app_name')}</span>
+            <div>
+              <span className="text-xl font-black text-slate-900 tracking-tight block">{t(language, 'app_name')}</span>
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Stress Monitor</span>
+            </div>
           </div>
 
-          <div className="mb-6 bg-indigo-50 border border-indigo-100 rounded-2xl p-4 shadow-sm">
+          <div className="mb-6 bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100/50 rounded-2xl p-4 shadow-sm card-hover">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
-                <Sparkles size={18} />
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm flex-shrink-0">
+                <Sparkles size={20} />
               </div>
               <div>
                 <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1">
                   {t(language, 'affirmation_badge')}
                 </p>
-                <p className="text-sm font-bold text-slate-800 italic leading-snug">"{affirmation}"</p>
+                <p className="text-sm font-semibold text-slate-700 italic leading-relaxed">"{affirmation}"</p>
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 space-y-2">
+          <nav className="flex-1 space-y-1.5 stagger-children">
             {sidebarItems.map((item) => (
               <button
                 key={item.id}
@@ -549,27 +617,34 @@ const App: React.FC = () => {
                   if (item.id !== AppView.DASHBOARD) setAppState(AppState.WELCOME);
                   setIsSidebarOpen(false);
                 }}
-                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-all ${activeView === item.id
-                  ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600'
+                className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-xl font-semibold transition-all duration-200 btn-press ${activeView === item.id
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-200'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600'
                   }`}
               >
-                {item.icon}
+                <div className={`${activeView === item.id ? 'text-white' : 'text-slate-400'}`}>
+                  {item.icon}
+                </div>
                 <span className="text-sm">{item.label}</span>
+                {activeView === item.id && (
+                  <ChevronRight size={16} className="ml-auto" />
+                )}
               </button>
             ))}
           </nav>
 
-          <div className="mt-auto">
-            <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
-              <div className="flex items-center gap-2 mb-2">
-                <Flame size={16} className="text-amber-500" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <div className="mt-auto space-y-4">
+            <div className="p-5 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-100/50 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center shadow-sm">
+                  <Flame size={16} className="text-white" />
+                </div>
+                <span className="text-xs font-bold text-amber-800 uppercase tracking-widest">
                   {t(language, 'streak_label')}
                 </span>
               </div>
-              <p className="text-xl font-black text-slate-900">
-                {profile.streak} {t(language, 'streak_days_suffix')}
+              <p className="text-3xl font-black text-slate-900">
+                {profile.streak} <span className="text-lg font-bold text-slate-500">{t(language, 'streak_days_suffix')}</span>
               </p>
             </div>
           </div>
@@ -577,40 +652,43 @@ const App: React.FC = () => {
       </aside>
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="h-20 bg-white/50 backdrop-blur-md border-b border-slate-100 px-6 lg:px-12 flex items-center justify-between sticky top-0 z-30">
+        <header className="h-20 bg-white/70 backdrop-blur-xl border-b border-slate-200/50 px-6 lg:px-10 flex items-center justify-between sticky top-0 z-30 shadow-sm">
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-500"><Menu size={24} /></button>
-            <span className="hidden lg:block font-bold text-slate-500 text-sm tracking-tight uppercase tracking-[0.2em]">{activeView.replace('_', ' ')}</span>
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Menu size={24} /></button>
+            <div className="hidden lg:flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="font-bold text-slate-600 text-sm uppercase tracking-widest">{activeView.replace('_', ' ')}</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-              <span>{t(language, 'language_label')}:</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1 rounded-full bg-slate-100/80 backdrop-blur-sm px-1 py-1 text-xs font-semibold text-slate-600 border border-slate-200/50">
+              <span className="px-2 text-slate-400">{t(language, 'language_label')}</span>
               <button
                 onClick={() => { setLanguage('en'); saveLanguage('en'); }}
-                className={`px-2 py-0.5 rounded-full ${language === 'en' ? 'bg-indigo-600 text-white' : ''}`}
+                className={`px-3 py-1.5 rounded-full transition-all ${language === 'en' ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-white'}`}
               >
                 EN
               </button>
               <button
                 onClick={() => { setLanguage('hi'); saveLanguage('hi'); }}
-                className={`px-2 py-0.5 rounded-full ${language === 'hi' ? 'bg-indigo-600 text-white' : ''}`}
+                className={`px-3 py-1.5 rounded-full transition-all ${language === 'hi' ? 'bg-indigo-600 text-white shadow-sm' : 'hover:bg-white'}`}
               >
                 HI
               </button>
             </div>
-            <button className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+            <button className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all relative notification-pulse">
               <Bell size={20} />
             </button>
             <div className="relative" data-profile-menu>
               <button
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                className={`flex items-center gap-3 p-1.5 pr-4 rounded-full border transition-all ${activeView === AppView.PROFILE || isProfileMenuOpen
-                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100'
-                  : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-500'
+                className={`flex items-center gap-3 p-1.5 pr-4 rounded-full border-2 transition-all duration-200 btn-press ${activeView === AppView.PROFILE || isProfileMenuOpen
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-transparent text-white shadow-lg shadow-indigo-200'
+                  : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400 hover:shadow-md'
                   }`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeView === AppView.PROFILE || isProfileMenuOpen ? 'bg-white/20' : 'bg-slate-100 text-indigo-600'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeView === AppView.PROFILE || isProfileMenuOpen ? 'bg-white/20' : 'bg-gradient-to-br from-indigo-100 to-violet-100 text-indigo-600'}`}>
                   <User size={18} />
                 </div>
                 <span className="text-sm font-bold truncate max-w-[100px]">
@@ -620,21 +698,25 @@ const App: React.FC = () => {
               
               {/* Dropdown Menu */}
               {isProfileMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50">
+                <div className="absolute right-0 mt-3 w-52 bg-white/90 backdrop-blur-xl border border-slate-200/50 rounded-2xl shadow-2xl shadow-slate-200/50 z-50 overflow-hidden scale-in">
+                  <div className="p-3 bg-gradient-to-r from-indigo-50 to-violet-50 border-b border-slate-100">
+                    <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Signed in as</p>
+                    <p className="text-sm font-semibold text-slate-800 truncate">{currentUser?.email || 'User'}</p>
+                  </div>
                   <button
                     onClick={() => {
                       setActiveView(AppView.PROFILE);
                       setAppState(AppState.WELCOME);
                       setIsProfileMenuOpen(false);
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all border-b border-slate-100"
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all"
                   >
                     <User size={16} className="text-indigo-600" />
                     View Profile
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-all"
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 transition-all border-t border-slate-100"
                   >
                     <LogOut size={16} />
                     Logout
@@ -645,7 +727,7 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-6 py-8 md:px-12 no-scrollbar">
+        <main className="flex-1 overflow-y-auto px-6 py-8 md:px-10 no-scrollbar">
           {activeView === AppView.HISTORY ? (
             <ProgressView
               history={history}

@@ -12,21 +12,16 @@ class ErrorBoundary extends React.Component<
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error) {
+    // Log error for debugging
+    console.error('Game error caught:', error.message);
+    // Auto-recover immediately without showing error page
+    setTimeout(() => {
+      this.setState({ hasError: false, error: null });
+    }, 0);
+  }
+
   render() {
-    if (this.state.hasError && this.state.error) {
-      return (
-        <div style={{ padding: 24, fontFamily: 'system-ui', maxWidth: 560 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Something went wrong</h1>
-          <p style={{ color: '#64748b', marginBottom: 16 }}>{this.state.error.message}</p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            style={{ padding: '8px 16px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontWeight: 600 }}
-          >
-            Try again
-          </button>
-        </div>
-      );
-    }
     return this.props.children;
   }
 }

@@ -3,39 +3,96 @@ import { GameResult, StressAnalysis, Message, AssessmentHistoryItem } from "../t
 // Local stress analysis without API
 export const analyzeStress = async (results: GameResult, coords?: { latitude: number, longitude: number }): Promise<StressAnalysis> => {
   try {
+    // Log received results for debugging
+    console.log('📊 Analyzing stress with results:', results);
+    
+    // Safely extract values with defaults
+    const reactionTime = results.reactionTime ?? 300; // Default average reaction time
+    const memoryScore = results.memoryScore ?? 50; // Default average memory score
+    const tappingSpeed = results.tappingSpeed ?? 5; // Default average tapping speed
+    const accuracy = results.accuracy ?? 70; // Default average accuracy
+    
+    console.log('📊 Parsed values:', { reactionTime, memoryScore, tappingSpeed, accuracy });
+    
     // Calculate stress level based on game results
-    const reactionPenalty = Math.max(0, (results.reactionTime - 250) / 250 * 30);
-    const memoryPenalty = Math.max(0, (80 - results.memoryScore) / 80 * 25);
-    const tappingPenalty = Math.max(0, (6 - results.tappingSpeed) / 6 * 20);
-    const accuracyPenalty = Math.max(0, (90 - results.accuracy) / 90 * 25);
+    // Higher reaction time = more stress (above 250ms is slower)
+    const reactionPenalty = Math.max(0, (reactionTime - 250) / 250 * 30);
+    
+    // Lower memory score = more stress (below 80 is worse)
+    const memoryPenalty = Math.max(0, (80 - memoryScore) / 80 * 25);
+    
+    // Lower tapping consistency/speed = more stress (below 6 is slower)
+    const tappingPenalty = Math.max(0, (6 - tappingSpeed) / 6 * 20);
+    
+    // Lower accuracy = more stress (below 90 is worse)
+    const accuracyPenalty = Math.max(0, (90 - accuracy) / 90 * 25);
+    
+    console.log('📊 Penalties:', { reactionPenalty, memoryPenalty, tappingPenalty, accuracyPenalty });
     
     const stressLevel = Math.min(100, Math.round(reactionPenalty + memoryPenalty + tappingPenalty + accuracyPenalty));
+    console.log('📊 Final stress level:', stressLevel);
+
+    // Generate personalized insights based on actual performance
+    const insights: string[] = [];
+    
+    // Reaction time insight
+    if (reactionTime < 200) {
+      insights.push("Reflexes are exceptional—your alertness is high.");
+    } else if (reactionTime < 280) {
+      insights.push("Reflexes are solid—you're focused and responsive.");
+    } else if (reactionTime < 350) {
+      insights.push("Reaction time is average—may indicate mild fatigue.");
+    } else {
+      insights.push("Slower reactions detected—consider taking a break.");
+    }
+    
+    // Memory score insight  
+    if (memoryScore >= 90) {
+      insights.push("Memory performance is outstanding—excellent cognitive function.");
+    } else if (memoryScore >= 70) {
+      insights.push("Memory is working well with room for improvement.");
+    } else if (memoryScore >= 50) {
+      insights.push("Memory shows some strain—mental fatigue may be present.");
+    } else {
+      insights.push("Memory performance indicates high cognitive load.");
+    }
+    
+    // Accuracy insight
+    if (accuracy >= 90) {
+      insights.push("Accuracy is excellent—you're calm and precise.");
+    } else if (accuracy >= 70) {
+      insights.push("Accuracy is solid with room to sharpen focus.");
+    } else if (accuracy >= 50) {
+      insights.push("Speed is high but precision dipped—signs of overdrive.");
+    } else {
+      insights.push("Accuracy needs work—stress may be affecting precision.");
+    }
 
     const suggestions = [
       {
-        title: "Deep Breathing",
-        description: "Practice 4-7-8 breathing: Inhale for 4, hold for 7, exhale for 8.",
+        title: "Box Breathing",
+        description: "Inhale 4s, hold 4s, exhale 4s, hold 4s. Repeat 4 times.",
         type: "breathing" as const,
-        duration: "5 minutes"
+        duration: "3 minutes"
       },
       {
-        title: "Physical Activity",
-        description: "Take a 10-minute walk or do light stretching to release tension.",
+        title: "Posture Reset",
+        description: "Roll shoulders back, unclench jaw, relax your face muscles.",
         type: "physical" as const,
-        duration: "10 minutes"
+        duration: "1 minute"
       },
       {
-        title: "Mindfulness Meditation",
-        description: "Focus on your present moment with a guided meditation.",
+        title: "5-4-3-2-1 Grounding",
+        description: "Name 5 things you see, 4 you hear, 3 you feel, 2 you smell, 1 you taste.",
         type: "mental" as const,
-        duration: "15 minutes"
+        duration: "2 minutes"
       }
     ];
 
     const summaries: Record<string, string> = {
-      low: "Your cognitive performance shows you're in a calm, focused state. Keep up the good work!",
-      moderate: "You're showing signs of moderate stress. Try some relaxation techniques to find balance.",
-      high: "Your metrics indicate elevated stress. Take a break and practice some of our calming exercises."
+      low: "Your cognitive performance shows you're in a calm, focused state. Keep up the excellent work!",
+      moderate: "Assessment complete. Your stress level appears manageable—small adjustments can help you feel even better.",
+      high: "Your metrics indicate elevated stress. Take a moment to pause and try our recommended exercises."
     };
 
     const category = stressLevel < 40 ? "low" : stressLevel < 70 ? "moderate" : "high";
@@ -44,7 +101,7 @@ export const analyzeStress = async (results: GameResult, coords?: { latitude: nu
       stressLevel,
       summary: summaries[category],
       suggestions,
-      insights: []
+      insights
     };
   } catch (error) {
     return {
